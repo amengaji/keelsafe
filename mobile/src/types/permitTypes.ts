@@ -12,6 +12,17 @@ export type WorkType =
   | 'underwater' 
   | 'general';
 
+export type GasEntry = {
+    id: string;
+    name: string;
+    tlv: string;
+    unit: string;
+    top: string;
+    mid: string;
+    bot: string;
+    isCustom: boolean;
+};
+
 export interface Permit {
   id: string;
   permitId: string;
@@ -23,18 +34,23 @@ export interface Permit {
   createdAt: Date;
   expiresAt: Date;
   personnelCount: number;
+  
+  // New: Crew Roles
+  attendant?: string; // Standby Man
+  rescueTeam?: string[]; // List of names
+  
+  // New: Gas Config Snapshot
+  gasConfig: GasEntry[];
 }
 
-// 1. Define what screens are inside the Bottom Tabs
 export type BottomTabParamList = {
   DashboardTab: undefined;
   MonitorTab: { permitId: string };
 };
 
-// 2. Define the Main Stack (which contains the Tabs AND the full-screen Wizard)
 export type RootStackParamList = {
-  MainTabs: NavigatorScreenParams<BottomTabParamList>; // <--- This connects Tabs to Stack
-  Dashboard: undefined; 
+  MainTabs: NavigatorScreenParams<BottomTabParamList>;
+  Dashboard: undefined;
   PermitWizard: undefined;
   ActivePermit: { permitId: string };
 };

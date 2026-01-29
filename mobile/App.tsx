@@ -2,12 +2,16 @@
 
 import React from 'react';
 import AppContent from './src/AppContent';
+import { PermitProvider } from './src/context/PermitContext';
 
 /**
  * KeelSafe Mobile Entry Point
- * * We delegate all logic to src/AppContent to keep this file clean 
- * and strictly focused on initialization.
+ * * We wrap the UI (AppContent) with the Data Layer (PermitProvider).
  */
 export default function App() {
-  return <AppContent />;
+  return (
+    <PermitProvider> 
+        <AppContent />
+    </PermitProvider>
+  );
 }
