@@ -3,15 +3,20 @@
 import React from 'react';
 import AppContent from './src/AppContent';
 import { PermitProvider } from './src/context/PermitContext';
+import { AppThemeProvider } from './src/context/ThemeContext'; // <--- Import
 
 /**
  * KeelSafe Mobile Entry Point
- * * We wrap the UI (AppContent) with the Data Layer (PermitProvider).
+ * 1. ThemeProvider (Visuals)
+ * 2. PermitProvider (Data)
+ * 3. AppContent (Navigation & UI)
  */
 export default function App() {
   return (
-    <PermitProvider> 
-        <AppContent />
-    </PermitProvider>
+    <AppThemeProvider>
+        <PermitProvider> 
+            <AppContent />
+        </PermitProvider>
+    </AppThemeProvider>
   );
 }

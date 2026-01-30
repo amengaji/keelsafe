@@ -1,364 +1,258 @@
 // mobile/src/screens/ActivePermit/ActivePermitScreen.tsx
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet, ScrollView, Alert, Vibration, useWindowDimensions, TouchableOpacity } from 'react-native';
-import { Text, Button, Surface, Icon, Chip, useTheme, Divider, ProgressBar, Portal, Modal, IconButton } from 'react-native-paper';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Alert } from 'react-native';
+import { Text, Button, Surface, IconButton, useTheme, Divider, SegmentedButtons, Chip, ProgressBar, Icon, Avatar } from 'react-native-paper';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Speech from 'expo-speech';
-import { RootStackParamList, GasEntry } from '../../types/permitTypes';
-import { MOCK_PERMITS } from '../../constants/mockData';
-import { CREW_DATABASE } from '../../constants/crewData';
-import { HAZARD_DATABASE } from '../../constants/hazardsData'; 
+import { RootStackParamList } from '../../types/permitTypes'; // Ensure this matches your types file location
+
+// Context
+import { usePermits } from '../../context/PermitContext'; 
 
 // Components
-import TimeInputField from '../../components/inputs/TimeInputField';
-import GasTable from '../../components/common/GasTable';
+import GasTable from '../../components/common/GasTable'; 
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActivePermit'>;
 
-type Entrant = { id: string; name: string; rank: string; timeIn: Date; };
-type GasLog = { id: string; timestamp: Date; readings: GasEntry[]; isSafe: boolean; };
-type CommsLog = { id: string; timestamp: Date; type: string; note: string; };
-type PersonnelLog = { id: string; name: string; rank: string; type: 'ENTRY' | 'EXIT'; timestamp: Date; };
-
-export default function ActivePermitScreen({ navigation, route }: Props) {
-  const theme = useTheme();
-  const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
-  const isLandscape = width > height; 
+export default function ActivePermitScreen({ route, navigation }: Props) {
   const { permitId } = route.params;
+  const theme = useTheme();
+  const { getPermit, updatePermitStatus } = usePermits();
 
-  // 1. Load Data
-  const permit = MOCK_PERMITS.find(p => p.permitId === permitId) || MOCK_PERMITS[0];
+  // 1. Fetch Real Data
+  const permit = getPermit(permitId);
 
-  // 2. State
-  const [activeTab, setActiveTab] = useState<'personnel' | 'atmosphere' | 'details'>('personnel');
-  const [entrants, setEntrants] = useState<Entrant[]>([]);
-  const [selectedCrewId, setSelectedCrewId] = useState('');
-  const [personnelLogs, setPersonnelLogs] = useState<PersonnelLog[]>([]);
-  
-  const [gasLogs, setGasLogs] = useState<GasLog[]>([]);
-  const [showGasModal, setShowGasModal] = useState(false);
-  const [newGasTime, setNewGasTime] = useState<Date | null>(new Date());
-  const [newGasReadings, setNewGasReadings] = useState<GasEntry[]>(
-      JSON.parse(JSON.stringify(permit.gasConfig || []))
-  );
+  // 2. View State
+  const [activeTab, setActiveTab] = useState('overview');
+  const [timeLeft, setTimeLeft] = useState('');
+  const [progress, setProgress] = useState(1);
 
-  const [isAtmosphereUnsafe, setIsAtmosphereUnsafe] = useState(false); 
-  const [commsLogs, setCommsLogs] = useState<CommsLog[]>([]);
-
-  const [timeLeft, setTimeLeft] = useState(8 * 60 * 60); 
-  const [safetyTimer, setSafetyTimer] = useState(permit.checkFrequency * 60); 
-  const isAlarmActive = useRef(false);
-
-  // ---------------------------------------------------------------------------
-  // ALARM SYSTEM
-  // ---------------------------------------------------------------------------
-  const triggerAlarm = (type: 'TIMER' | 'EVAC') => {
-      if (isAlarmActive.current) return;
-      isAlarmActive.current = true;
-
-      const pattern = type === 'EVAC' ? [0, 200, 100, 200] : [0, 500, 500, 500]; 
-      const message = type === 'EVAC' 
-          ? "DANGER. Atmosphere Unsafe. Evacuate immediately." 
-          : "Safety Check Overdue. Establish communications.";
-
-      Vibration.vibrate(pattern, true); 
-
-      Speech.speak(message, {
-          language: 'en',
-          pitch: type === 'EVAC' ? 1.2 : 1.0,
-          rate: type === 'EVAC' ? 1.1 : 0.9,
-          onDone: () => { if (isAlarmActive.current) triggerAlarm(type); } 
-      });
-  };
-
-  const stopAlarm = () => {
-      isAlarmActive.current = false;
-      Vibration.cancel();
-      Speech.stop();
-  };
-
-  // ---------------------------------------------------------------------------
-  // TIMERS
-  // ---------------------------------------------------------------------------
+  // 3. Timer Logic
   useEffect(() => {
-      const interval = setInterval(() => {
-          setTimeLeft(p => (p > 0 ? p - 1 : 0));
-          
-          if (isAtmosphereUnsafe && entrants.length > 0) {
-              if (!isAlarmActive.current) triggerAlarm('EVAC');
-          } 
-          else if (entrants.length > 0) {
-              setSafetyTimer(prev => {
-                  if (prev === 1) { triggerAlarm('TIMER'); return 0; }
-                  if (prev === 0) return 0;
-                  return prev - 1;
-              });
-          } 
-          else {
-              if (isAlarmActive.current) stopAlarm();
-              setSafetyTimer(permit.checkFrequency * 60);
-          }
-      }, 1000);
-      return () => { clearInterval(interval); stopAlarm(); };
-  }, [entrants.length, isAtmosphereUnsafe]);
+    if (!permit || permit.status !== 'Active') return;
 
-  // ---------------------------------------------------------------------------
-  // LOGIC & HANDLERS
-  // ---------------------------------------------------------------------------
-  const addCommsLog = (type: string, note: string) => {
-      setCommsLogs(prev => [{ id: Date.now().toString(), timestamp: new Date(), type, note }, ...prev]);
-  };
+    const interval = setInterval(() => {
+      const now = new Date();
+      const end = new Date(permit.expiresAt);
+      const total = 8 * 60 * 60 * 1000; // Assuming 8 hour shift total
+      const remaining = end.getTime() - now.getTime();
 
-  const handleAcknowledge = () => {
-      if (isAtmosphereUnsafe) {
-          addCommsLog('Emergency Comms', 'Communications logged during Evacuation. Alarm continues.');
-          Alert.alert("Logged", "Comms recorded. ALARM WILL CONTINUE UNTIL SPACE IS EMPTY.");
+      if (remaining <= 0) {
+        setTimeLeft('EXPIRED');
+        setProgress(0);
+        clearInterval(interval);
       } else {
-          stopAlarm();
-          setSafetyTimer(permit.checkFrequency * 60); 
-          addCommsLog('Alarm Acknowledge', 'Routine Check Verified.');
-          Alert.alert("Verified", "Timer reset.");
+        const hours = Math.floor(remaining / (1000 * 60 * 60));
+        const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+        setTimeLeft(`${hours}h ${minutes}m`);
+        setProgress(remaining / total);
       }
-  };
+    }, 60000); // Update every minute
 
-  // --- GAS HANDLERS (Restored) ---
-  const openGasModal = () => {
-      setNewGasTime(new Date());
-      // Reset readings to clear but keep structure
-      const freshReadings = JSON.parse(JSON.stringify(permit.gasConfig)).map((g: GasEntry) => ({
-          ...g, top: '', mid: '', bot: ''
-      }));
-      setNewGasReadings(freshReadings);
-      setShowGasModal(true);
-  };
+    // Initial call
+    const now = new Date();
+    const end = new Date(permit.expiresAt);
+    const remaining = end.getTime() - now.getTime();
+    const hours = Math.floor(remaining / (1000 * 60 * 60));
+    const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+    setTimeLeft(`${hours}h ${minutes}m`);
 
-  const updateNewGasEntry = (id: string, field: keyof GasEntry, value: string) => {
-      setNewGasReadings(prev => prev.map(entry => 
-          entry.id === id ? { ...entry, [field]: value } : entry
-      ));
-  };
+    return () => clearInterval(interval);
+  }, [permit]);
 
-  const saveGasLog = () => {
-      const hasEmpty = newGasReadings.some(g => !g.isCustom && (!g.top || !g.mid || !g.bot));
-      if(hasEmpty) return Alert.alert("Incomplete", "Fill all mandatory fields.");
-
-      const isUnsafe = newGasReadings.some(g => {
-          const check = (val: string, tlv: string, id: string) => {
-              if(!val) return false; const v=parseFloat(val); const t=parseFloat(tlv);
-              if(isNaN(v)) return false; 
-              if(id==='o2') return v<20.9 || v>23.5; 
-              if(!isNaN(t) && t>0) return v>t; 
-              return false;
-          }
-          return check(g.top,g.tlv,g.id) || check(g.mid,g.tlv,g.id) || check(g.bot,g.tlv,g.id);
-      });
-
-      const newLog: GasLog = { id: Date.now().toString(), timestamp: newGasTime||new Date(), readings: newGasReadings, isSafe: !isUnsafe };
-      setGasLogs(p => [newLog, ...p]);
-      setShowGasModal(false);
-
-      if (isUnsafe) {
-          setIsAtmosphereUnsafe(true);
-          stopAlarm(); 
-          triggerAlarm('EVAC');
-          addCommsLog('Emergency', 'UNSAFE ATMOSPHERE. EVACUATION ORDERED.');
-          Alert.alert("CRITICAL", "Atmosphere Unsafe! EVACUATE NOW.");
-      } else {
-          setIsAtmosphereUnsafe(false);
-          stopAlarm(); 
-          setSafetyTimer(permit.checkFrequency * 60);
-          addCommsLog('Gas Check', 'Atmosphere Safe. Timer Reset.');
-          Alert.alert("Safe", "Readings Safe.");
-      }
-  };
-
-  const handleEntry = () => {
-      if (isAtmosphereUnsafe) return Alert.alert("LOCKED", "Atmosphere Unsafe. Entry Forbidden.");
-      if (!selectedCrewId) return;
-      const c = CREW_DATABASE.find(x => x.id === selectedCrewId);
-      if(!c) return;
-      if (entrants.some(e => e.id === c.id)) return Alert.alert("Error", "Already inside");
-      if (permit.attendant === c.name) return Alert.alert("Violation", "Attendant cannot enter");
-      if (permit.rescueTeam?.includes(c.name)) return Alert.alert("Violation", "Rescue Team cannot enter");
-
-      setEntrants(p => [...p, { id: c.id, name: c.name, rank: c.rank, timeIn: new Date() }]);
-      setPersonnelLogs(p => [{ id: Date.now().toString(), name: c.name, rank: c.rank, type: 'ENTRY', timestamp: new Date() }, ...p]);
-      setSelectedCrewId('');
-  };
-
-  const handleExit = (id: string) => {
-      const leaver = entrants.find(e => e.id === id);
-      if (leaver) setPersonnelLogs(p => [{ id: Date.now().toString(), name: leaver.name, rank: leaver.rank, type: 'EXIT', timestamp: new Date() }, ...p]);
-      
-      const remaining = entrants.filter(e => e.id !== id);
-      setEntrants(remaining);
-
-      if (remaining.length === 0 && isAlarmActive.current) {
-          stopAlarm();
-          if (isAtmosphereUnsafe) Alert.alert("Evacuation Complete", "Space is empty. Alarm silenced. Atmosphere still UNSAFE.");
-      }
-  };
-
-  // --- UI ---
-  const isSafetyOverdue = safetyTimer === 0 && entrants.length > 0;
-  let heroColor = theme.colors.primaryContainer; 
-  let heroTextColor = theme.colors.onPrimaryContainer;
-  let heroStatusText = "ATMOSPHERE CHECK TIMER";
-  
-  if (isAtmosphereUnsafe) { heroColor = '#D32F2F'; heroTextColor = 'white'; heroStatusText = "DANGER - EVACUATE NOW"; }
-  else if (isSafetyOverdue) { heroColor = '#F57F17'; heroTextColor = 'white'; heroStatusText = "ALARM: CHECK OVERDUE"; }
-  else if (entrants.length === 0) { heroColor = theme.colors.surfaceVariant; heroTextColor = theme.colors.onSurfaceVariant; heroStatusText = "STANDBY - EMPTY"; }
-  else { heroColor = '#E3F2FD'; heroTextColor = '#1565C0'; heroStatusText = "NEXT CHECK DUE IN"; }
-
-  const formatTimerHero = (s: number) => { const m=Math.floor(s/60); const sc=s%60; return `${m.toString().padStart(2,'0')}:${sc.toString().padStart(2,'0')}`; };
-
-  // --- RENDER SECTIONS ---
-  const renderSafetyPanel = () => (
-      <View style={{ flex: isLandscape ? 0.4 : 0, marginRight: isLandscape ? 16 : 0 }}>
-          <Surface style={[styles.heroCard, { backgroundColor: heroColor, height: isLandscape ? 220 : 'auto', justifyContent:'center' }]} elevation={4}>
-              <View style={{ alignItems: 'center' }}>
-                  <View style={{flexDirection:'row', alignItems:'center', marginBottom:8}}>
-                      <Icon source={isAtmosphereUnsafe ? "skull-crossbones" : (isSafetyOverdue ? "alarm-light" : "timer-sand")} size={isLandscape ? 50 : 36} color={heroTextColor} />
-                      <Text style={{color: heroTextColor, fontSize: isLandscape ? 28 : 20, fontWeight: 'bold', marginLeft: 12}}>{isAtmosphereUnsafe ? "EVACUATE" : (isSafetyOverdue ? "ALARM" : "ACTIVE")}</Text>
-                  </View>
-                  <Text style={{ fontSize: isLandscape ? 80 : 56, fontWeight: 'bold', color: heroTextColor, fontVariant: ['tabular-nums'], lineHeight: isLandscape ? 90 : 64 }}>
-                      {formatTimerHero(safetyTimer)}
-                  </Text>
-                  <Text style={{ color: heroTextColor, fontWeight: 'bold', letterSpacing: 1, marginTop: 4 }}>{heroStatusText}</Text>
-                  
-                  {(isAtmosphereUnsafe || isSafetyOverdue) && (
-                      <Button mode="contained" buttonColor="white" textColor={heroColor} icon="radio-handheld" onPress={handleAcknowledge} style={{marginTop: 16, width: '100%'}}>
-                          {isAtmosphereUnsafe ? "Log Comms (Keep Alarm)" : "Comms Established"}
-                      </Button>
-                  )}
-              </View>
-          </Surface>
-
-          <Surface style={styles.counterCard} elevation={1}>
-              <Text variant="displayLarge" style={{ fontWeight: 'bold', color: entrants.length > 0 ? (isAtmosphereUnsafe ? theme.colors.error : theme.colors.primary) : theme.colors.onSurfaceDisabled }}>
-                  {entrants.length}
-              </Text>
-              <Text variant="titleMedium" style={{opacity: 0.7}}>Personnel Inside</Text>
-          </Surface>
-          
-          <View style={styles.sectionCard}>
-                <Text variant="titleSmall" style={{fontWeight:'bold', marginBottom:8}}>Manage Access</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                    {CREW_DATABASE.map(c => (
-                        <Chip key={c.id} mode="outlined" selected={selectedCrewId === c.id} onPress={() => setSelectedCrewId(c.id)} style={{ marginRight: 8 }} showSelectedOverlay>{c.name}</Chip>
-                    ))}
-                </ScrollView>
-                <Button mode="contained" icon="login" onPress={handleEntry} disabled={!selectedCrewId || isAtmosphereUnsafe} buttonColor={isAtmosphereUnsafe ? '#ccc' : theme.colors.primary}>
-                    Register Entry
-                </Button>
-          </View>
+  // Handle Missing Permit (Crash Safety)
+  if (!permit) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Text>Permit not found.</Text>
+        <Button onPress={() => navigation.goBack()}>Go Back</Button>
       </View>
-  );
+    );
+  }
 
-  const renderLogPanel = () => (
-      <View style={{ flex: isLandscape ? 0.6 : 1, marginTop: isLandscape ? 0 : 16 }}>
-          <View style={styles.tabBar}>
-              <TouchableOpacity style={[styles.tabItem, activeTab === 'personnel' && styles.activeTab]} onPress={() => setActiveTab('personnel')}><Text style={[styles.tabText, activeTab === 'personnel' && styles.activeTabText]}>ENTRANTS</Text></TouchableOpacity>
-              <TouchableOpacity style={[styles.tabItem, activeTab === 'atmosphere' && styles.activeTab]} onPress={() => setActiveTab('atmosphere')}><Text style={[styles.tabText, activeTab === 'atmosphere' && styles.activeTabText]}>ATMOSPHERE</Text></TouchableOpacity>
-              <TouchableOpacity style={[styles.tabItem, activeTab === 'details' && styles.activeTab]} onPress={() => setActiveTab('details')}><Text style={[styles.tabText, activeTab === 'details' && styles.activeTabText]}>DETAILS</Text></TouchableOpacity>
-          </View>
+  // --- ACTIONS ---
+  const handleSuspend = () => {
+    Alert.alert("Suspend Permit?", "This will pause all work immediately.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Suspend Work", style: 'destructive', onPress: () => {
+          updatePermitStatus(permit.permitId, 'Suspended');
+          navigation.goBack();
+      }}
+    ]);
+  };
 
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 4 }}>
-              {activeTab === 'personnel' && (
-                  <View>
-                      {entrants.map((p) => (
-                          <Surface key={p.id} style={[styles.entrantRow, isAtmosphereUnsafe && {borderColor: theme.colors.error, borderWidth:2}]} elevation={1}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                  <Icon source="account" size={28} color={isAtmosphereUnsafe ? theme.colors.error : theme.colors.primary} />
-                                  <View style={{ marginLeft: 12 }}>
-                                      <Text variant="titleMedium" style={{ fontWeight: 'bold' }}>{p.name}</Text>
-                                      <Text variant="bodySmall">In: {p.timeIn.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</Text>
-                                  </View>
-                              </View>
-                              <Button mode="contained" buttonColor={theme.colors.error} onPress={() => handleExit(p.id)} compact>EXIT</Button>
-                          </Surface>
-                      ))}
-                      <Divider style={{marginVertical:16}} />
-                      <Text variant="titleSmall" style={{fontWeight:'bold', marginBottom:8}}>History</Text>
-                      {personnelLogs.map(log => (
-                          <View key={log.id} style={{flexDirection:'row', marginBottom:8}}><Icon source={log.type==='ENTRY'?"login":"logout"} size={16}/><Text style={{marginLeft:8, fontSize:12}}>{log.name} {log.type} at {log.timestamp.toLocaleTimeString()}</Text></View>
-                      ))}
-                  </View>
-              )}
+  const handleClose = () => {
+    Alert.alert("Close Permit", "Are all tools removed and housekeeping complete?", [
+        { text: "No", style: "cancel" },
+        { text: "Yes, Close Permit", onPress: () => {
+            updatePermitStatus(permit.permitId, 'Closed');
+            navigation.goBack();
+        }}
+    ]);
+  };
 
-              {activeTab === 'atmosphere' && (
-                  <View>
-                      <View style={{flexDirection:'row', gap:12, marginBottom:16}}>
-                          <Button mode="contained" icon="gas-cylinder" onPress={openGasModal} style={{flex:1}}>Record Gas</Button>
-                          <Button mode="outlined" icon="radio-handheld" onPress={() => addCommsLog('Routine', 'Routine Check')} style={{flex:1}}>Log Comms</Button>
-                      </View>
-                      {gasLogs.map(log => (
-                          <View key={log.id} style={{marginBottom:12, padding:12, backgroundColor:'white', borderRadius:8, borderLeftWidth:4, borderLeftColor: log.isSafe?'green':'red'}}>
-                              <View style={{flexDirection:'row', justifyContent:'space-between'}}><Text style={{fontWeight:'bold'}}>{log.timestamp.toLocaleTimeString()}</Text><Text style={{color:log.isSafe?'green':'red', fontWeight:'bold'}}>{log.isSafe?"SAFE":"UNSAFE"}</Text></View>
-                              <View style={{marginTop:4}}>{log.readings.map(r => r.top ? <Text key={r.id} style={{fontSize:11}}>{r.name}: {r.top}/{r.mid}/{r.bot}</Text> : null)}</View>
-                          </View>
-                      ))}
-                      <Divider style={{marginVertical:16}}/>
-                      <Text variant="titleSmall" style={{fontWeight:'bold'}}>Comms Log</Text>
-                      {commsLogs.map(l => <Text key={l.id} style={{fontSize:12, marginTop:4}}>{l.timestamp.toLocaleTimeString()} - {l.note}</Text>)}
-                  </View>
-              )}
+  // --- RENDER HELPERS ---
+  const getStatusColor = () => {
+      switch(permit.status) {
+          case 'Active': return '#4CAF50'; // Green
+          case 'Suspended': return '#FF9800'; // Orange
+          case 'Closed': return '#9E9E9E'; // Grey
+          case 'Expired': return '#F44336'; // Red
+          default: return theme.colors.primary;
+      }
+  };
 
-              {activeTab === 'details' && (
-                  <View style={{padding:8}}>
-                      <Text style={{fontWeight:'bold'}}>Attendant: {permit.attendant}</Text>
-                      <Text style={{fontWeight:'bold', marginBottom:12}}>Rescue: {permit.rescueTeam?.join(', ')}</Text>
-                      <Text>Work Types: {permit.workTypes.join(', ')}</Text>
-                  </View>
-              )}
-          </ScrollView>
-      </View>
-  );
-
-  // MAIN RENDER
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <Surface style={styles.header} elevation={1}>
-          <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
-              <Text variant="titleMedium" style={{ fontWeight: 'bold', color: theme.colors.primary }}>{permit.permitId} <Text style={{fontWeight:'normal', color:'black'}}>| {permit.location}</Text></Text>
-              <IconButton icon="close" onPress={() => navigation.goBack()} />
-          </View>
-      </Surface>
-
-      <View style={{ flex: 1, flexDirection: isLandscape ? 'row' : 'column', padding: 16 }}>
-          {renderSafetyPanel()}
-          {renderLogPanel()}
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      
+      {/* HEADER */}
+      <View style={styles.header}>
+        <IconButton icon="arrow-left" size={24} onPress={() => navigation.goBack()} />
+        <View style={{flex:1, alignItems:'center'}}>
+            <Text variant="titleMedium" style={{fontWeight:'bold'}}>{permit.permitId}</Text>
+            <View style={{flexDirection:'row', alignItems:'center', gap:6}}>
+                <View style={{width:8, height:8, borderRadius:4, backgroundColor: getStatusColor()}} />
+                <Text variant="labelSmall" style={{color: getStatusColor(), fontWeight:'bold'}}>{permit.status.toUpperCase()}</Text>
+            </View>
+        </View>
+        <IconButton icon="dots-vertical" size={24} onPress={() => {}} />
       </View>
 
-      <Portal>
-          <Modal visible={showGasModal} onDismiss={() => setShowGasModal(false)} contentContainerStyle={{ padding: 20 }}>
-              <Surface style={{ padding: 24, borderRadius: 16, backgroundColor: '#fff', width: isLandscape ? '50%' : '100%', alignSelf:'center' }}>
-                  <Text variant="titleLarge" style={{ fontWeight: 'bold', marginBottom:16 }}>Atmosphere Check</Text>
-                  <TimeInputField label="Time" value={newGasTime} onChange={setNewGasTime} required />
-                  <View style={{ height: 300, marginTop: 16 }}>
-                      <GasTable entries={newGasReadings} onUpdate={updateNewGasEntry} readOnlyNames={true} />
-                  </View>
-                  <Button mode="contained" onPress={saveGasLog} style={{marginTop: 16}}>Save & Verify</Button>
-              </Surface>
-          </Modal>
-      </Portal>
-    </View>
+      <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
+        
+        {/* HERO TIMER */}
+        <Surface style={[styles.timerCard, { backgroundColor: getStatusColor() }]} elevation={4}>
+            <Text variant="labelMedium" style={{ color: 'rgba(255,255,255,0.8)', letterSpacing: 1 }}>TIME REMAINING</Text>
+            <Text variant="displayMedium" style={{ color: 'white', fontWeight: 'bold', marginVertical: 8 }}>{timeLeft || "--:--"}</Text>
+            <ProgressBar progress={progress} color="rgba(255,255,255,0.5)" style={{ height: 6, borderRadius: 3, backgroundColor: 'rgba(0,0,0,0.2)' }} />
+            <Text variant="bodySmall" style={{ color: 'rgba(255,255,255,0.9)', marginTop: 8 }}>
+                Expires: {new Date(permit.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </Text>
+        </Surface>
+
+        {/* TABS */}
+        <SegmentedButtons
+            value={activeTab}
+            onValueChange={setActiveTab}
+            style={styles.tabs}
+            buttons={[
+            { value: 'overview', label: 'Overview', icon: 'file-document-outline' },
+            { value: 'gas', label: 'Atmosphere', icon: 'gas-cylinder' },
+            { value: 'crew', label: 'Crew', icon: 'account-group' },
+            ]}
+        />
+
+        {/* TAB CONTENT */}
+        <View style={styles.content}>
+            
+            {/* 1. OVERVIEW TAB */}
+            {activeTab === 'overview' && (
+                <>
+                    <Surface style={styles.card} elevation={1}>
+                        <Text variant="titleMedium" style={styles.cardTitle}>Work Scope</Text>
+                        <View style={styles.row}><Icon source="map-marker" size={20} color={theme.colors.secondary} /><Text style={styles.rowText}>{permit.location}</Text></View>
+                        <Divider style={{ marginVertical: 12 }} />
+                        <Text style={{ lineHeight: 22 }}>{permit.description}</Text>
+                    </Surface>
+
+                    <Surface style={styles.card} elevation={1}>
+                        <Text variant="titleMedium" style={styles.cardTitle}>Hazards & Controls</Text>
+                        <View style={{flexDirection:'row', flexWrap:'wrap', gap:8}}>
+                            {permit.workTypes.map(w => (
+                                <Chip key={w} icon="alert" style={{backgroundColor:'#FFEBEE'}}>{w.replace('_', ' ').toUpperCase()}</Chip>
+                            ))}
+                        </View>
+                    </Surface>
+                </>
+            )}
+
+            {/* 2. GAS TAB */}
+            {activeTab === 'gas' && (
+                <>
+                    {permit.gasLogs.length > 0 ? (
+                        <>
+                            <Surface style={[styles.card, { borderLeftWidth: 4, borderLeftColor: permit.gasLogs[0].isSafe ? '#4CAF50' : '#F44336' }]} elevation={2}>
+                                <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+                                    <Text variant="titleMedium" style={{fontWeight:'bold'}}>Latest Reading</Text>
+                                    <Text variant="labelSmall">{new Date(permit.gasLogs[0].timestamp).toLocaleTimeString()}</Text>
+                                </View>
+                                {/* Reusing your GasTable component for display */}
+                                <GasTable entries={permit.gasLogs[0].readings} onUpdate={() => {}} readOnly /> 
+                            </Surface>
+
+                            <Text variant="titleSmall" style={{marginVertical:16, opacity:0.6, fontWeight:'bold'}}>HISTORY</Text>
+                            
+                            {permit.gasLogs.slice(1).map((log, index) => (
+                                <Surface key={index} style={styles.logItem} elevation={0}>
+                                    <Text style={{fontWeight:'bold'}}>{new Date(log.timestamp).toLocaleTimeString()}</Text>
+                                    <Text style={{color: log.isSafe ? '#4CAF50' : '#F44336', fontWeight:'bold'}}>{log.isSafe ? 'SAFE' : 'UNSAFE'}</Text>
+                                </Surface>
+                            ))}
+                        </>
+                    ) : (
+                        <View style={styles.emptyState}>
+                            <Icon source="gas-cylinder" size={48} color={theme.colors.surfaceDisabled} />
+                            <Text style={{marginTop:12, opacity:0.5}}>No gas readings required or recorded.</Text>
+                        </View>
+                    )}
+                    
+                    <Button mode="outlined" icon="plus" style={{marginTop:24}} onPress={() => Alert.alert("Feature", "Opens Gas Testing Form")}>New Gas Test</Button>
+                </>
+            )}
+
+            {/* 3. CREW TAB */}
+            {activeTab === 'crew' && (
+                <Surface style={styles.card} elevation={1}>
+                    <Text variant="titleMedium" style={styles.cardTitle}>Authorized Personnel</Text>
+                    
+                    <View style={styles.roleRow}>
+                        <Avatar.Text size={32} label="AT" style={{backgroundColor:theme.colors.primaryContainer}} />
+                        <View style={{marginLeft:12, flex:1}}>
+                            <Text style={{fontWeight:'bold'}}>{permit.attendant || "None"}</Text>
+                            <Text variant="labelSmall">Standby / Fire Watch</Text>
+                        </View>
+                        <IconButton icon="phone" size={20} />
+                    </View>
+
+                    {permit.rescueTeam && permit.rescueTeam.length > 0 && (
+                        <>
+                            <Divider style={{marginVertical:12}} />
+                            <Text variant="labelSmall" style={{fontWeight:'bold', marginBottom:8}}>RESCUE TEAM</Text>
+                            {permit.rescueTeam.map((name, i) => (
+                                <Chip key={i} icon="ambulance" style={{marginBottom:4}}>{name}</Chip>
+                            ))}
+                        </>
+                    )}
+                </Surface>
+            )}
+
+        </View>
+      </ScrollView>
+
+      {/* FOOTER ACTIONS */}
+      {permit.status === 'Active' && (
+          <View style={[styles.footer, { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.outline }]}>
+            <Button mode="outlined" textColor="#FF9800" style={{flex:1, borderColor:'#FF9800'}} onPress={handleSuspend}>Suspend</Button>
+            <View style={{width:16}} />
+            <Button mode="contained" buttonColor={theme.colors.error} style={{flex:1}} onPress={handleClose}>Close Permit</Button>
+          </View>
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#fff' },
-  heroCard: { borderRadius: 16, padding: 24, marginBottom: 16, justifyContent: 'center' },
-  counterCard: { padding: 24, alignItems: 'center', borderRadius: 16, marginBottom: 16, backgroundColor: '#fff' },
-  sectionCard: { padding: 16, borderRadius: 12, backgroundColor: '#fff', marginBottom: 16 },
-  tabBar: { flexDirection: 'row', backgroundColor: '#fff', marginBottom: 16, borderRadius: 12 },
-  tabItem: { flex: 1, alignItems: 'center', paddingVertical: 12 },
-  tabText: { fontWeight: 'bold', color: '#757575', fontSize: 12 },
-  activeTab: { borderBottomColor: '#00695C', borderBottomWidth: 3 },
-  activeTabText: { color: '#00695C' },
-  entrantRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 12, marginBottom: 8, backgroundColor: '#fff' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 8 },
+  timerCard: { margin: 16, padding: 24, borderRadius: 16, alignItems: 'center' },
+  tabs: { marginHorizontal: 16, marginBottom: 16 },
+  content: { paddingHorizontal: 16 },
+  card: { padding: 16, borderRadius: 12, backgroundColor: 'white', marginBottom: 16 },
+  cardTitle: { fontWeight: 'bold', marginBottom: 16 },
+  row: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  rowText: { marginLeft: 8, opacity: 0.8 },
+  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, flexDirection: 'row', borderTopWidth: 1 },
+  emptyState: { alignItems: 'center', padding: 32, opacity: 0.7 },
+  logItem: { flexDirection:'row', justifyContent:'space-between', padding:16, backgroundColor:'#F5F5F5', borderRadius:8, marginBottom:8 },
+  roleRow: { flexDirection:'row', alignItems:'center', paddingVertical:8 }
 });

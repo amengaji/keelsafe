@@ -76,7 +76,6 @@ export default function WizardScreen({ navigation }: Props) {
   // --- DYNAMIC LOGIC ENGINE ---
   const isEnclosed = selectedWorkTypes.includes('enclosed_space');
   const isHotWork = selectedWorkTypes.includes('hot_work');
-  const isAloft = selectedWorkTypes.includes('working_aloft');
   const isElectrical = selectedWorkTypes.includes('electrical');
 
   const attendantLabel = isHotWork && !isEnclosed ? "Fire Watch" : "Attendant (Standby)";
@@ -177,25 +176,40 @@ export default function WizardScreen({ navigation }: Props) {
     if (step < TOTAL_STEPS) setStep(step + 1);
     else {
         const newPermitId = `PTW-2026-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
-        
+        const now = new Date();
+
         createPermit({
+            // Identification
             id: Date.now().toString(),
             permitId: newPermitId,
+            
+            // Meta
             status: 'Active',
+            createdAt: now,
+            updatedAt: now,
+            validFrom: now,
+            expiresAt: new Date(now.getTime() + 8 * 60 * 60 * 1000),
+            version: 1, // Start Versioning
+
+            // Scope
             location,
             workTypes: selectedWorkTypes,
             description,
             checkFrequency: parseInt(frequency) || 15,
-            createdAt: new Date(),
-            expiresAt: new Date(new Date().getTime() + 8 * 60 * 60 * 1000),
+
+            // Dynamic
             personnelCount: 0,
             attendant,
             rescueTeam: isEnclosed ? rescueTeam : [], 
-            gasConfig: showGasSection ? gasEntries : [] 
+
+            // Modules (INITIALIZE EMPTY ARRAYS TO PREVENT CRASH)
+            gasConfig: showGasSection ? gasEntries : [],
+            gasLogs: showGasSection ? gasLogs : [], 
+            isolations: isolations,
+            signatures: [] // New required field
         });
 
         Alert.alert("Permit Issued", `Permit ${newPermitId} is now Active.`, [
-            // Using 'as any' bypasses the strict type check for the nested navigator
             { text: "Go to Dashboard", onPress: () => navigation.navigate('MainTabs' as any) }
         ]);
     }

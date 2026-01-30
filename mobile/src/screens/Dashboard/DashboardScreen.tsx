@@ -1,13 +1,15 @@
 // mobile/src/screens/Dashboard/DashboardScreen.tsx
 
-import React from 'react';
-import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity } from 'react-native';
-import { Text, FAB, useTheme, Surface, IconButton, Avatar, Badge } from 'react-native-paper';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, useWindowDimensions, StatusBar, Platform } from 'react-native';
+import { Text, FAB, useTheme, Surface, IconButton, Avatar, Badge, Icon, Divider } from 'react-native-paper';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context'; 
 import { RootStackParamList } from '../../types/permitTypes';
 
-// Context (The Brain)
+// Contexts
 import { usePermits } from '../../context/PermitContext'; 
+import { useAppTheme } from '../../context/ThemeContext'; // <--- NEW IMPORT
 
 // Components
 import PermitCard from '../../components/common/PermitCard';
@@ -15,108 +17,238 @@ import PermitCard from '../../components/common/PermitCard';
 type Props = NativeStackScreenProps<RootStackParamList, 'MainTabs'>;
 
 export default function DashboardScreen({ navigation }: Props) {
-  const theme = useTheme();
+  const theme = useTheme(); // Now gets dynamic theme from Context
+  const { isDarkMode, toggleTheme } = useAppTheme(); // <--- USE GLOBAL TOGGLE
+  const insets = useSafeAreaInsets(); 
+  const { width, height } = useWindowDimensions();
   
-  // USE THE HOOK: Read from the live brain instead of the static file
+  const isLandscape = width > height;
+
   const { permits } = usePermits(); 
 
+  const [time, setTime] = useState(new Date());
+  useEffect(() => { const timer = setInterval(() => setTime(new Date()), 60000); return () => clearInterval(timer); }, []);
+
   const activePermits = permits.filter(p => p.status === 'Active');
-  const otherPermits = permits.filter(p => p.status !== 'Active');
+  const historyPermits = permits.filter(p => p.status !== 'Active');
+  const suspendedCount = permits.filter(p => p.status === 'Suspended').length;
 
   const handleOpenPermit = (id: string) => {
-      // Find the specific permit ID to verify it exists before navigating
       const target = permits.find(p => p.permitId === id);
-      if (target) {
-          navigation.navigate('ActivePermit', { permitId: id });
-      }
+      if (target) navigation.navigate('ActivePermit', { permitId: id });
   };
+
+  // --- COMPONENTS ---
+
+  const Header = ({ textColor = theme.colors.onPrimaryContainer, iconColor = theme.colors.onPrimaryContainer }) => (
+    <View style={styles.headerContainer}>
+        <View style={{ flex: 1 }}>
+            <Text variant="labelSmall" style={{ color: textColor, opacity: 0.7, letterSpacing: 1 }}>COMMANDER</Text>
+            <Text variant="titleLarge" style={{ fontWeight: 'bold', color: textColor }}>Capt. Hook</Text>
+            <Text variant="bodySmall" style={{ color: textColor, opacity: 0.8 }}>
+                {time.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
+            </Text>
+        </View>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <IconButton 
+                icon={isDarkMode ? "weather-night" : "weather-sunny"} // Icon reflects current state
+                iconColor={iconColor} 
+                size={24} 
+                onPress={toggleTheme} // <--- TRIGGERS GLOBAL CHANGE
+            />
+            <View>
+                <IconButton 
+                    icon="bell-outline" 
+                    iconColor={iconColor} 
+                    size={24} 
+                    onPress={() => console.log("Notifications")} 
+                />
+                <Badge size={8} style={{ position: 'absolute', top: 8, right: 8 }} visible={true} />
+            </View>
+            <TouchableOpacity style={{ marginLeft: 8 }}>
+                <Avatar.Text size={40} label="CH" style={{ backgroundColor: theme.colors.primaryContainer }} color={theme.colors.onPrimaryContainer} />
+            </TouchableOpacity>
+        </View>
+    </View>
+  );
+
+  const StatBadge = ({ icon, label, count, color, bg }: any) => (
+    <Surface style={[styles.statCard, { backgroundColor: isDarkMode ? theme.colors.elevation.level2 : bg }]} elevation={2}>
+        <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'flex-start'}}>
+            <Icon source={icon} size={24} color={color} />
+            <Text variant="displaySmall" style={{ fontWeight: 'bold', color: color, lineHeight: 32 }}>{count}</Text>
+        </View>
+        <Text variant="labelMedium" style={{ color: isDarkMode ? theme.colors.onSurface : color, marginTop: 4, fontWeight: 'bold' }}>{label}</Text>
+    </Surface>
+  );
+
+  const QuickActions = ({ vertical = false }) => (
+    <View style={vertical ? styles.actionGridVertical : styles.actionGrid}>
+        <ActionButton icon="plus" label="New Permit" color={theme.colors.primary} onPress={() => navigation.navigate('PermitWizard')} />
+        <ActionButton icon="qrcode-scan" label="Scan QR" color={theme.colors.secondary} onPress={() => {}} />
+        <ActionButton icon="account-group" label="Crew List" color={theme.colors.tertiary} onPress={() => {}} />
+        <ActionButton icon="history" label="History" color={theme.colors.surfaceVariant} textColor={theme.colors.onSurfaceVariant} onPress={() => {}} />
+    </View>
+  );
+
+  const ActionButton = ({ icon, label, color, textColor = 'white', onPress }: any) => (
+    <TouchableOpacity style={styles.actionBtn} onPress={onPress}>
+        <Surface style={[styles.actionIcon, { backgroundColor: color }]} elevation={2}>
+            <Icon source={icon} size={24} color={textColor} />
+        </Surface>
+        <Text variant="labelSmall" style={styles.actionLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+
+  // --- LAYOUTS ---
+
+  const renderPortrait = () => (
+    <ScrollView contentContainerStyle={{ paddingBottom: 80 }}>
+        {/* Hero Section - Uses Primary Color in Dark Mode, Teal in Light */}
+        <Surface style={[styles.heroSection, { paddingTop: insets.top + 10, backgroundColor: isDarkMode ? theme.colors.surface : '#004D40' }]} elevation={4}>
+            <Header textColor={isDarkMode ? theme.colors.onSurface : 'white'} iconColor={isDarkMode ? theme.colors.onSurface : 'white'} />
+            
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
+                <View style={{flex:1}}><StatBadge icon="file-document-edit" label="ACTIVE" count={activePermits.length} color={theme.colors.primary} bg="#E3F2FD" /></View>
+                <View style={{flex:1}}><StatBadge icon="alert-circle-outline" label="SUSPENDED" count={suspendedCount} color={theme.colors.error} bg="#FFF3E0" /></View>
+                <View style={{flex:1}}><StatBadge icon="history" label="HISTORY" count={historyPermits.length} color={theme.colors.outline} bg="#ECEFF1" /></View>
+            </View>
+        </Surface>
+
+        <View style={styles.bodySection}>
+            <Text variant="titleMedium" style={styles.sectionTitle}>Quick Actions</Text>
+            <QuickActions />
+
+            <Divider style={{ marginVertical: 20 }} />
+
+            <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+                <Text variant="titleMedium" style={styles.sectionTitle}>Ongoing Works</Text>
+                <Badge size={20} style={{backgroundColor: theme.colors.primary}}>{activePermits.length}</Badge>
+            </View>
+
+            {activePermits.length > 0 ? (
+                activePermits.map(permit => <PermitCard key={permit.id} permit={permit} onPress={handleOpenPermit} />)
+            ) : (
+                <Surface style={[styles.emptyState, { backgroundColor: theme.colors.surfaceVariant }]} elevation={0}>
+                    <Icon source="ship-wheel" size={48} color={theme.colors.onSurfaceDisabled} />
+                    <Text style={{ marginTop: 12, color: theme.colors.onSurfaceDisabled }}>No active works on deck.</Text>
+                </Surface>
+            )}
+            
+            {historyPermits.length > 0 && (
+                <>
+                    <Divider style={{ marginVertical: 20 }} />
+                    <Text variant="titleMedium" style={[styles.sectionTitle, {marginBottom: 12}]}>Recent History</Text>
+                    {historyPermits.map(permit => <PermitCard key={permit.id} permit={permit} onPress={handleOpenPermit} />)}
+                </>
+            )}
+        </View>
+    </ScrollView>
+  );
+
+  const renderLandscape = () => (
+    <View style={{ flexDirection: 'row', flex: 1, paddingTop: insets.top }}>
+        {/* LEFT SIDEBAR */}
+        <Surface style={[styles.sidebar, { backgroundColor: theme.colors.surface, borderRightColor: theme.colors.outlineVariant }]} elevation={2}>
+            <View style={{ padding: 20 }}>
+                <Header textColor={theme.colors.onSurface} iconColor={theme.colors.onSurface} />
+                
+                <Divider style={{ marginVertical: 24 }} />
+                
+                <Text variant="titleSmall" style={{marginBottom:12, fontWeight:'bold', opacity:0.7}}>STATUS BOARD</Text>
+                <StatBadge icon="file-document-edit" label="ACTIVE" count={activePermits.length} color={theme.colors.primary} bg="#E3F2FD" />
+                <View style={{height:12}} />
+                <StatBadge icon="alert-circle-outline" label="ATTENTION" count={suspendedCount} color={theme.colors.error} bg="#FFEBEE" />
+                
+                <Divider style={{ marginVertical: 24 }} />
+                <Text variant="titleSmall" style={{marginBottom:12, fontWeight:'bold', opacity:0.7}}>ACTIONS</Text>
+                <QuickActions />
+            </View>
+        </Surface>
+
+        {/* RIGHT CONTENT */}
+        <View style={[styles.mainContent, { backgroundColor: theme.colors.background }]}>
+            <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 80 }}>
+                <Text variant="headlineSmall" style={{ fontWeight: 'bold', marginBottom: 16, color: theme.colors.primary }}>Active Work Permits</Text>
+                
+                <View style={styles.grid}>
+                    {activePermits.length > 0 ? (
+                        activePermits.map(permit => (
+                            <View key={permit.id} style={{ width: '48%', marginBottom: 16 }}>
+                                <PermitCard permit={permit} onPress={handleOpenPermit} />
+                            </View>
+                        ))
+                    ) : (
+                        <View style={{width:'100%', alignItems:'center', padding: 40}}>
+                            <Icon source="ship-wheel" size={64} color={theme.colors.surfaceDisabled} />
+                            <Text style={{opacity:0.5, marginTop: 16}}>No active permits found.</Text>
+                        </View>
+                    )}
+                </View>
+
+                {historyPermits.length > 0 && (
+                    <>
+                        <Text variant="headlineSmall" style={{ fontWeight: 'bold', marginTop: 24, marginBottom: 16, color: theme.colors.secondary }}>History</Text>
+                        <View style={styles.grid}>
+                            {historyPermits.map(permit => (
+                                <View key={permit.id} style={{ width: '48%', marginBottom: 16 }}>
+                                    <PermitCard permit={permit} onPress={handleOpenPermit} />
+                                </View>
+                            ))}
+                        </View>
+                    </>
+                )}
+            </ScrollView>
+        </View>
+    </View>
+  );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <StatusBar barStyle={isDarkMode ? "light-content" : "light-content"} backgroundColor={isDarkMode ? theme.colors.background : '#004D40'} />
+      {isLandscape ? renderLandscape() : renderPortrait()}
       
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-            <Text variant="titleSmall" style={{ opacity: 0.7, fontWeight: 'bold' }}>GOOD MORNING</Text>
-            <Text variant="headlineMedium" style={{ fontWeight: 'bold', color: theme.colors.primary }}>Captain Hook</Text>
-        </View>
-        <TouchableOpacity>
-            <Avatar.Text size={48} label="CH" style={{ backgroundColor: theme.colors.primaryContainer }} />
-            <Badge style={styles.badge} size={16}>3</Badge>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        
-        {/* Status Overview Cards */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statusRow}>
-            <Surface style={[styles.statusCard, { backgroundColor: '#E3F2FD' }]} elevation={1}>
-                <IconButton icon="file-document-edit" size={24} iconColor="#1565C0" />
-                <Text variant="titleLarge" style={{ fontWeight: 'bold', color: '#1565C0' }}>{activePermits.length}</Text>
-                <Text variant="bodySmall" style={{ color: '#1565C0' }}>Active Permits</Text>
-            </Surface>
-            <Surface style={[styles.statusCard, { backgroundColor: '#FFEBEE' }]} elevation={1}>
-                <IconButton icon="alert-circle" size={24} iconColor="#C62828" />
-                <Text variant="titleLarge" style={{ fontWeight: 'bold', color: '#C62828' }}>0</Text>
-                <Text variant="bodySmall" style={{ color: '#C62828' }}>Overdue</Text>
-            </Surface>
-            <Surface style={[styles.statusCard, { backgroundColor: '#E8F5E9' }]} elevation={1}>
-                <IconButton icon="check-circle" size={24} iconColor="#2E7D32" />
-                <Text variant="titleLarge" style={{ fontWeight: 'bold', color: '#2E7D32' }}>{otherPermits.length}</Text>
-                <Text variant="bodySmall" style={{ color: '#2E7D32' }}>Completed</Text>
-            </Surface>
-        </ScrollView>
-
-        <Text variant="titleMedium" style={styles.sectionTitle}>Active Works</Text>
-        
-        {activePermits.length > 0 ? (
-            activePermits.map(permit => (
-                <PermitCard 
-                    key={permit.id} 
-                    permit={permit} 
-                    onPress={handleOpenPermit} 
-                />
-            ))
-        ) : (
-            <View style={styles.emptyState}>
-                <Text style={{ opacity: 0.5 }}>No active permits. The deck is quiet.</Text>
-            </View>
-        )}
-
-        {otherPermits.length > 0 && (
-            <>
-                <Text variant="titleMedium" style={styles.sectionTitle}>Recent History</Text>
-                {otherPermits.map(permit => (
-                    <PermitCard 
-                        key={permit.id} 
-                        permit={permit} 
-                        onPress={handleOpenPermit} 
-                    />
-                ))}
-            </>
-        )}
-
-      </ScrollView>
-
-      <FAB
-        icon="plus"
-        label="Issue Permit"
-        style={[styles.fab, { backgroundColor: theme.colors.primary }]}
-        color="#fff"
-        onPress={() => navigation.navigate('PermitWizard')} 
-      />
+      {!isLandscape && (
+          <FAB
+            icon="plus"
+            label="Issue"
+            style={[styles.fab, { backgroundColor: theme.colors.primary, bottom: insets.bottom + 16 }]}
+            color={theme.colors.onPrimary}
+            onPress={() => navigation.navigate('PermitWizard')} 
+          />
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20 },
-  badge: { position: 'absolute', top: 0, right: 0 },
-  scrollContent: { paddingBottom: 80 },
-  statusRow: { paddingHorizontal: 16, marginBottom: 24, flexDirection: 'row' },
-  statusCard: { width: 110, height: 110, borderRadius: 16, marginRight: 12, padding: 12, justifyContent: 'center' },
-  sectionTitle: { paddingHorizontal: 20, marginBottom: 12, fontWeight: 'bold', opacity: 0.8 },
-  fab: { position: 'absolute', margin: 16, right: 0, bottom: 0, borderRadius: 32 },
-  emptyState: { padding: 20, alignItems: 'center' }
+  
+  heroSection: {
+      paddingBottom: 32,
+      paddingHorizontal: 20,
+      borderBottomLeftRadius: 32,
+      borderBottomRightRadius: 32,
+  },
+  headerContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  
+  statCard: { padding: 16, borderRadius: 16, minHeight: 100, justifyContent: 'center' },
+
+  bodySection: { padding: 20 },
+  sectionTitle: { fontWeight: 'bold', opacity: 0.8 },
+  
+  actionGrid: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
+  actionGridVertical: { flexDirection: 'column', gap: 12 },
+  actionBtn: { alignItems: 'center', flex: 1 },
+  actionIcon: { width: 56, height: 56, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  actionLabel: { fontWeight: '600', opacity: 0.8, textAlign: 'center', fontSize: 11 },
+
+  emptyState: { padding: 40, alignItems: 'center', borderRadius: 16, marginTop: 12 },
+
+  sidebar: { width: 340, height: '100%', borderRightWidth: 1 },
+  mainContent: { flex: 1 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
+
+  fab: { position: 'absolute', margin: 20, right: 0, borderRadius: 32 },
 });

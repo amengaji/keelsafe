@@ -19,7 +19,7 @@ const Tab = createBottomTabNavigator<BottomTabParamList>();
 // Custom Header Component
 function CustomHeader({ navigation, route, options, back }: any) {
   const theme = useTheme();
-  const { isDark, toggleTheme } = useAppTheme();
+  const { isDarkMode, toggleTheme } = useAppTheme();
   const title = getHeaderTitle(options, route.name);
 
   return (
@@ -30,7 +30,7 @@ function CustomHeader({ navigation, route, options, back }: any) {
       
       {/* Dark Mode Toggle */}
       <Appbar.Action 
-        icon={isDark ? "weather-sunny" : "weather-night"} 
+        icon={isDarkMode ? "weather-sunny" : "weather-night"} 
         onPress={toggleTheme} 
         color={theme.colors.primary}
       />
