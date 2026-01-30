@@ -72,6 +72,22 @@ export interface Signature {
   scribbleUrl?: string; // The "pretty" signature for the PDF
 }
 
+// 5. Entry and Exit Logs
+export interface EntryLog {
+  id: string;
+  timestamp: Date;
+  name: string;
+  direction: 'IN' | 'OUT';
+}
+
+// 6. Safety Check Logs
+export interface SafetyCheckLog {
+  id: string;
+  timestamp: Date;
+  checkedBy: string;
+  notes?: string;
+}
+
 // --- THE CORE PERMIT OBJECT ---
 
 export interface Permit {
@@ -100,12 +116,17 @@ export interface Permit {
   personnelCount: number; // Current people in the zone
   attendant?: string;     // Name of Standby Man
   rescueTeam?: string[];  // Array of names
+  lastCheckAt?: Date;    // Last gas check time for reminders
+  safetyCheckLogs: SafetyCheckLog[];  // Safety checks history
   
   // Data Modules
   gasConfig: GasEntry[];      // The required limits for this specific permit
   gasLogs: GasLog[];          // History of checks
   isolations: IsolationPoint[]; // LOTO records
   signatures: Signature[];    // Auth chain
+
+  entryLogs: EntryLog[];      // Who went in/out and when
+  
 }
 
 // --- NAVIGATION TYPES ---
