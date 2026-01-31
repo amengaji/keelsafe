@@ -1,41 +1,25 @@
 // mobile/src/types/permitTypes.ts
 
-// --- ENUMS & UNIONS (The Fixed Rules) ---
+export type PermitStatus = 'Draft' | 'Pending' | 'Active' | 'Suspended' | 'JobComplete' | 'Closed' | 'Expired';
 
-export type PermitStatus = 
-  | 'Draft'       // Created, not yet active
-  | 'Pending'     // Waiting for Master/Shore approval
-  | 'Active'      // Live, work is happening
-  | 'Suspended'   // Paused (e.g., alarm triggered, shift change)
-  | 'Closed'      // Work finished, signed off
-  | 'Expired';    // Time limit reached automatically
+export type WorkType = 'hot_work' | 'enclosed_space' | 'working_aloft' | 'electrical' | 'diving' | 'general';
 
-export type WorkType = 
-  | 'hot_work' 
-  | 'enclosed_space' 
-  | 'working_aloft' 
-  | 'electrical' 
-  | 'diving' 
-  | 'general';
+export type UserRole = 'Master' | 'ChiefOfficer' | 'Pumpman' | 'Bosun' | 'Crew' | 'ShoreAdmin'| 'Issuing Authority';
 
-export type UserRole = 'Master' | 'ChiefOfficer' | 'Pumpman' | 'Bosun' | 'Crew' | 'ShoreAdmin';
-
-// --- SUB-OBJECTS (The Modules) ---
-
-// 1. Who is involved?
 export interface CrewMember {
-  id: string;      // UUID
-  name: string;
-  role: UserRole;
-  pinHash?: string; // Stored locally only
+    id: string;
+    name: string;
+    rank: string;
+    role: UserRole;
+    pin: string;
+    avatarInitials: string;
 }
 
-// 2. The Atmosphere (Critical Safety)
 export interface GasEntry {
-  id: string;      // e.g. 'o2', 'h2s'
+  id: string;
   name: string;
-  tlv: string;     // Threshold Limit Value
-  unit: '%' | 'ppm';
+  tlv: string;
+  unit: string;
   top: string;
   mid: string;
   bot: string;
@@ -43,36 +27,32 @@ export interface GasEntry {
 }
 
 export interface GasLog {
-  id: string;           // UUID
+  id: string;
   timestamp: Date;
-  performedBy: string;  // User Name/ID
-  readings: GasEntry[]; // Snapshot of readings at that time
+  performedBy: string;
+  readings: GasEntry[];
   isSafe: boolean;
   notes?: string;
 }
 
-// 3. Lock Out Tag Out (Isolation)
 export interface IsolationPoint {
   id: string;
   tagNumber: string;
   equipment: string;
   location: string;
-  method: 'Lock' | 'Tag' | 'Disconnect';
+  method: string;
   status: 'Isolated' | 'De-Isolated';
-  isolatedBy: string;   // User ID
+  isolatedBy: string;
   isolatedAt: Date;
 }
 
-// 4. The Signatures (Audit Trail)
 export interface Signature {
-  role: string;         // e.g. "Issuing Authority", "Performing Authority"
-  name: string;         // "Capt. Hook"
+  role: string;
+  name: string;
   signedAt: Date;
-  digitalHash: string;  // The cryptographic proof (PIN + Timestamp hash)
-  scribbleUrl?: string; // The "pretty" signature for the PDF
+  digitalHash: string;
 }
 
-// 5. Entry and Exit Logs
 export interface EntryLog {
   id: string;
   timestamp: Date;
@@ -80,7 +60,6 @@ export interface EntryLog {
   direction: 'IN' | 'OUT';
 }
 
-// 6. Safety Check Logs
 export interface SafetyCheckLog {
   id: string;
   timestamp: Date;
@@ -88,48 +67,41 @@ export interface SafetyCheckLog {
   notes?: string;
 }
 
-// --- THE CORE PERMIT OBJECT ---
-
 export interface Permit {
-  // Identification
-  id: string;           // UUID (Generated on Tablet)
-  permitId: string;     // Human Readable (e.g. PTW-2024-085)
-  
-  // Meta Data
+  id: string;
+  permitId: string;
   status: PermitStatus;
   createdAt: Date;
-  updatedAt: Date;      // For Sync Logic
-  syncedAt?: Date;      // Last time it touched the server
-  version: number;      // Increment on every edit to handle conflicts
+  updatedAt: Date;
+  syncedAt?: Date;
+  version: number;
 
-  // Scope
   location: string;
   description: string;
   workTypes: WorkType[];
   
-  // Constraints
   validFrom: Date;
   expiresAt: Date;
-  checkFrequency: number; // Minutes between required checks
+  checkFrequency: number;
 
-  // Dynamic Data
-  personnelCount: number; // Current people in the zone
-  attendant?: string;     // Name of Standby Man
-  rescueTeam?: string[];  // Array of names
-  lastCheckAt?: Date;    // Last gas check time for reminders
-  safetyCheckLogs: SafetyCheckLog[];  // Safety checks history
+  personnelCount: number;
   
-  // Data Modules
-  gasConfig: GasEntry[];      // The required limits for this specific permit
-  gasLogs: GasLog[];          // History of checks
-  isolations: IsolationPoint[]; // LOTO records
-  signatures: Signature[];    // Auth chain
+  // ROLES
+  attendant?: string;       // Enclosed Space Standby
+  fireWatch?: string;       // Hot Work Fire Watch (NEW)
+  rescueTeam?: string[];    // Enclosed Space Rescue
+  fireFightingTeam?: string[]; // Hot Work Fire Squad (NEW)
 
-  entryLogs: EntryLog[];      // Who went in/out and when
+  lastCheckAt?: Date;
+  safetyCheckLogs: SafetyCheckLog[];
   
+  gasConfig: GasEntry[];
+  gasLogs: GasLog[];
+  entryLogs: EntryLog[]; 
+  isolations: IsolationPoint[];
+  signatures: Signature[];
 }
 
-// --- NAVIGATION TYPES ---
 export type RootStackParamList = {
   MainTabs: undefined;
   PermitWizard: undefined;

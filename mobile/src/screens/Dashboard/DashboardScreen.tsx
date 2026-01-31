@@ -1,15 +1,15 @@
 // mobile/src/screens/Dashboard/DashboardScreen.tsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, useWindowDimensions, StatusBar, Platform } from 'react-native';
-import { Text, FAB, useTheme, Surface, IconButton, Avatar, Badge, Icon, Divider } from 'react-native-paper';
+import { Text, FAB, useTheme, Surface, IconButton, Avatar, Badge, Icon, Divider, SegmentedButtons } from 'react-native-paper';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context'; 
-import { RootStackParamList } from '../../types/permitTypes';
+import { RootStackParamList, Permit } from '../../types/permitTypes';
 
 // Contexts
 import { usePermits } from '../../context/PermitContext'; 
-import { useAppTheme } from '../../context/ThemeContext'; // <--- NEW IMPORT
+import { useAppTheme } from '../../context/ThemeContext'; 
 
 // Components
 import PermitCard from '../../components/common/PermitCard';
@@ -17,8 +17,8 @@ import PermitCard from '../../components/common/PermitCard';
 type Props = NativeStackScreenProps<RootStackParamList, 'MainTabs'>;
 
 export default function DashboardScreen({ navigation }: Props) {
-  const theme = useTheme(); // Now gets dynamic theme from Context
-  const { isDarkMode, toggleTheme } = useAppTheme(); // <--- USE GLOBAL TOGGLE
+  const theme = useTheme(); 
+  const { isDarkMode, toggleTheme } = useAppTheme(); 
   const insets = useSafeAreaInsets(); 
   const { width, height } = useWindowDimensions();
   
@@ -27,15 +27,41 @@ export default function DashboardScreen({ navigation }: Props) {
   const { permits } = usePermits(); 
 
   const [time, setTime] = useState(new Date());
+  const [viewMode, setViewMode] = useState('live'); // 'live' | 'pending' | 'history'
+
   useEffect(() => { const timer = setInterval(() => setTime(new Date()), 60000); return () => clearInterval(timer); }, []);
 
-  const activePermits = permits.filter(p => p.status === 'Active');
-  const historyPermits = permits.filter(p => p.status !== 'Active');
-  const suspendedCount = permits.filter(p => p.status === 'Suspended').length;
+  // --- SMART FILTERING ---
+  const { livePermits, pendingPermits, historyPermits, counts } = useMemo(() => {
+      const live = permits.filter(p => ['Active', 'Suspended', 'JobComplete'].includes(p.status));
+      const pending = permits.filter(p => ['Draft', 'Pending'].includes(p.status));
+      const history = permits.filter(p => ['Closed', 'Expired'].includes(p.status));
+
+      return {
+          livePermits: live,
+          pendingPermits: pending,
+          historyPermits: history,
+          counts: {
+              active: permits.filter(p => p.status === 'Active').length,
+              suspended: permits.filter(p => p.status === 'Suspended').length,
+              complete: permits.filter(p => p.status === 'JobComplete').length,
+              total: permits.length
+          }
+      };
+  }, [permits]);
 
   const handleOpenPermit = (id: string) => {
       const target = permits.find(p => p.permitId === id);
-      if (target) navigation.navigate('ActivePermit', { permitId: id });
+      if (target) {
+          // If Draft, go to Wizard (Edit). If Live/History, go to Active Screen.
+          if (target.status === 'Draft') {
+              // TODO: Implement Edit Draft Logic (Future Phase)
+              // For now, view it.
+              navigation.navigate('ActivePermit', { permitId: id });
+          } else {
+              navigation.navigate('ActivePermit', { permitId: id });
+          }
+      }
   };
 
   // --- COMPONENTS ---
@@ -52,10 +78,10 @@ export default function DashboardScreen({ navigation }: Props) {
 
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <IconButton 
-                icon={isDarkMode ? "weather-night" : "weather-sunny"} // Icon reflects current state
+                icon={isDarkMode ? "weather-night" : "weather-sunny"} 
                 iconColor={iconColor} 
                 size={24} 
-                onPress={toggleTheme} // <--- TRIGGERS GLOBAL CHANGE
+                onPress={toggleTheme} 
             />
             <View>
                 <IconButton 
@@ -88,7 +114,7 @@ export default function DashboardScreen({ navigation }: Props) {
         <ActionButton icon="plus" label="New Permit" color={theme.colors.primary} onPress={() => navigation.navigate('PermitWizard')} />
         <ActionButton icon="qrcode-scan" label="Scan QR" color={theme.colors.secondary} onPress={() => {}} />
         <ActionButton icon="account-group" label="Crew List" color={theme.colors.tertiary} onPress={() => {}} />
-        <ActionButton icon="history" label="History" color={theme.colors.surfaceVariant} textColor={theme.colors.onSurfaceVariant} onPress={() => {}} />
+        <ActionButton icon="file-document-outline" label="Reports" color={theme.colors.surfaceVariant} textColor={theme.colors.onSurfaceVariant} onPress={() => {}} />
     </View>
   );
 
@@ -101,48 +127,60 @@ export default function DashboardScreen({ navigation }: Props) {
     </TouchableOpacity>
   );
 
+  const PermitGrid = ({ data }: { data: Permit[] }) => (
+      <View style={styles.grid}>
+          {data.length > 0 ? (
+              data.map(permit => (
+                  <View key={permit.id} style={{ width: isLandscape ? '32%' : '100%', marginBottom: 16 }}>
+                      <PermitCard permit={permit} onPress={handleOpenPermit} />
+                  </View>
+              ))
+          ) : (
+              <View style={styles.emptyState}>
+                  <Icon source="clipboard-text-off-outline" size={48} color={theme.colors.surfaceDisabled} />
+                  <Text style={{ marginTop: 12, color: theme.colors.onSurfaceDisabled }}>No permits in this category.</Text>
+              </View>
+          )}
+      </View>
+  );
+
   // --- LAYOUTS ---
 
   const renderPortrait = () => (
     <ScrollView contentContainerStyle={{ paddingBottom: 80 }}>
-        {/* Hero Section - Uses Primary Color in Dark Mode, Teal in Light */}
+        {/* Hero Section */}
         <Surface style={[styles.heroSection, { paddingTop: insets.top + 10, backgroundColor: isDarkMode ? theme.colors.surface : '#004D40' }]} elevation={4}>
             <Header textColor={isDarkMode ? theme.colors.onSurface : 'white'} iconColor={isDarkMode ? theme.colors.onSurface : 'white'} />
             
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
-                <View style={{flex:1}}><StatBadge icon="file-document-edit" label="ACTIVE" count={activePermits.length} color={theme.colors.primary} bg="#E3F2FD" /></View>
-                <View style={{flex:1}}><StatBadge icon="alert-circle-outline" label="SUSPENDED" count={suspendedCount} color={theme.colors.error} bg="#FFF3E0" /></View>
-                <View style={{flex:1}}><StatBadge icon="history" label="HISTORY" count={historyPermits.length} color={theme.colors.outline} bg="#ECEFF1" /></View>
+                <View style={{flex:1}}><StatBadge icon="file-document-edit" label="ACTIVE" count={counts.active} color={theme.colors.primary} bg="#E3F2FD" /></View>
+                <View style={{flex:1}}><StatBadge icon="alert-circle-outline" label="SUSPENDED" count={counts.suspended} color={theme.colors.error} bg="#FFF3E0" /></View>
+                <View style={{flex:1}}><StatBadge icon="check-circle-outline" label="COMPLETE" count={counts.complete} color="green" bg="#E8F5E9" /></View>
             </View>
         </Surface>
 
         <View style={styles.bodySection}>
-            <Text variant="titleMedium" style={styles.sectionTitle}>Quick Actions</Text>
             <QuickActions />
 
             <Divider style={{ marginVertical: 20 }} />
 
-            <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
-                <Text variant="titleMedium" style={styles.sectionTitle}>Ongoing Works</Text>
-                <Badge size={20} style={{backgroundColor: theme.colors.primary}}>{activePermits.length}</Badge>
-            </View>
+            {/* TABS */}
+            <SegmentedButtons
+                value={viewMode}
+                onValueChange={setViewMode}
+                buttons={[
+                    { value: 'live', label: 'Live Work', icon: 'hammer-wrench' },
+                    { value: 'pending', label: 'Pending', icon: 'clock-outline' },
+                    { value: 'history', label: 'History', icon: 'archive-outline' },
+                ]}
+                style={{marginBottom: 16}}
+            />
 
-            {activePermits.length > 0 ? (
-                activePermits.map(permit => <PermitCard key={permit.id} permit={permit} onPress={handleOpenPermit} />)
-            ) : (
-                <Surface style={[styles.emptyState, { backgroundColor: theme.colors.surfaceVariant }]} elevation={0}>
-                    <Icon source="ship-wheel" size={48} color={theme.colors.onSurfaceDisabled} />
-                    <Text style={{ marginTop: 12, color: theme.colors.onSurfaceDisabled }}>No active works on deck.</Text>
-                </Surface>
-            )}
+            {/* CONTENT */}
+            {viewMode === 'live' && <PermitGrid data={livePermits} />}
+            {viewMode === 'pending' && <PermitGrid data={pendingPermits} />}
+            {viewMode === 'history' && <PermitGrid data={historyPermits} />}
             
-            {historyPermits.length > 0 && (
-                <>
-                    <Divider style={{ marginVertical: 20 }} />
-                    <Text variant="titleMedium" style={[styles.sectionTitle, {marginBottom: 12}]}>Recent History</Text>
-                    {historyPermits.map(permit => <PermitCard key={permit.id} permit={permit} onPress={handleOpenPermit} />)}
-                </>
-            )}
         </View>
     </ScrollView>
   );
@@ -157,48 +195,35 @@ export default function DashboardScreen({ navigation }: Props) {
                 <Divider style={{ marginVertical: 24 }} />
                 
                 <Text variant="titleSmall" style={{marginBottom:12, fontWeight:'bold', opacity:0.7}}>STATUS BOARD</Text>
-                <StatBadge icon="file-document-edit" label="ACTIVE" count={activePermits.length} color={theme.colors.primary} bg="#E3F2FD" />
-                <View style={{height:12}} />
-                <StatBadge icon="alert-circle-outline" label="ATTENTION" count={suspendedCount} color={theme.colors.error} bg="#FFEBEE" />
+                <View style={{flexDirection:'row', gap:8, flexWrap:'wrap'}}>
+                    <View style={{width:'48%'}}><StatBadge icon="file-document-edit" label="ACTIVE" count={counts.active} color={theme.colors.primary} bg="#E3F2FD" /></View>
+                    <View style={{width:'48%'}}><StatBadge icon="alert-circle-outline" label="PAUSED" count={counts.suspended} color={theme.colors.error} bg="#FFEBEE" /></View>
+                </View>
                 
                 <Divider style={{ marginVertical: 24 }} />
                 <Text variant="titleSmall" style={{marginBottom:12, fontWeight:'bold', opacity:0.7}}>ACTIONS</Text>
-                <QuickActions />
+                <QuickActions vertical />
             </View>
         </Surface>
 
         {/* RIGHT CONTENT */}
         <View style={[styles.mainContent, { backgroundColor: theme.colors.background }]}>
-            <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 80 }}>
-                <Text variant="headlineSmall" style={{ fontWeight: 'bold', marginBottom: 16, color: theme.colors.primary }}>Active Work Permits</Text>
-                
-                <View style={styles.grid}>
-                    {activePermits.length > 0 ? (
-                        activePermits.map(permit => (
-                            <View key={permit.id} style={{ width: '48%', marginBottom: 16 }}>
-                                <PermitCard permit={permit} onPress={handleOpenPermit} />
-                            </View>
-                        ))
-                    ) : (
-                        <View style={{width:'100%', alignItems:'center', padding: 40}}>
-                            <Icon source="ship-wheel" size={64} color={theme.colors.surfaceDisabled} />
-                            <Text style={{opacity:0.5, marginTop: 16}}>No active permits found.</Text>
-                        </View>
-                    )}
-                </View>
+            <View style={{padding: 24, paddingBottom: 0}}>
+                <SegmentedButtons
+                    value={viewMode}
+                    onValueChange={setViewMode}
+                    buttons={[
+                        { value: 'live', label: 'Live Work', icon: 'hammer-wrench' },
+                        { value: 'pending', label: 'Pending', icon: 'clock-outline' },
+                        { value: 'history', label: 'History', icon: 'archive-outline' },
+                    ]}
+                />
+            </View>
 
-                {historyPermits.length > 0 && (
-                    <>
-                        <Text variant="headlineSmall" style={{ fontWeight: 'bold', marginTop: 24, marginBottom: 16, color: theme.colors.secondary }}>History</Text>
-                        <View style={styles.grid}>
-                            {historyPermits.map(permit => (
-                                <View key={permit.id} style={{ width: '48%', marginBottom: 16 }}>
-                                    <PermitCard permit={permit} onPress={handleOpenPermit} />
-                                </View>
-                            ))}
-                        </View>
-                    </>
-                )}
+            <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 80 }}>
+                {viewMode === 'live' && <PermitGrid data={livePermits} />}
+                {viewMode === 'pending' && <PermitGrid data={pendingPermits} />}
+                {viewMode === 'history' && <PermitGrid data={historyPermits} />}
             </ScrollView>
         </View>
     </View>
@@ -233,7 +258,7 @@ const styles = StyleSheet.create({
   },
   headerContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   
-  statCard: { padding: 16, borderRadius: 16, minHeight: 100, justifyContent: 'center' },
+  statCard: { padding: 12, borderRadius: 16, minHeight: 90, justifyContent: 'center' },
 
   bodySection: { padding: 20 },
   sectionTitle: { fontWeight: 'bold', opacity: 0.8 },
@@ -244,7 +269,7 @@ const styles = StyleSheet.create({
   actionIcon: { width: 56, height: 56, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   actionLabel: { fontWeight: '600', opacity: 0.8, textAlign: 'center', fontSize: 11 },
 
-  emptyState: { padding: 40, alignItems: 'center', borderRadius: 16, marginTop: 12 },
+  emptyState: { padding: 40, alignItems: 'center', justifyContent:'center', opacity:0.7, width:'100%' },
 
   sidebar: { width: 340, height: '100%', borderRightWidth: 1 },
   mainContent: { flex: 1 },

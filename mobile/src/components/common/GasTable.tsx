@@ -1,100 +1,133 @@
 // mobile/src/components/common/GasTable.tsx
 
-import React from 'react';
-import { View, StyleSheet } from 'react-native';
-import { Text, TextInput, useTheme, DataTable } from 'react-native-paper';
+import React, { useRef } from 'react';
+import { View, StyleSheet, TextInput as NativeTextInput } from 'react-native';
+import { Text, TextInput, DataTable, useTheme } from 'react-native-paper';
 import { GasEntry } from '../../types/permitTypes';
 
 interface Props {
   entries: GasEntry[];
   onUpdate: (id: string, field: keyof GasEntry, value: string) => void;
-  readOnly?: boolean; // <--- NEW PROP
+  readOnly?: boolean;
 }
 
 export default function GasTable({ entries, onUpdate, readOnly = false }: Props) {
   const theme = useTheme();
+  
+  // Refs for auto-focusing next field
+  // Index mapping: Row i, Col j (0=top, 1=mid, 2=bot) -> index = i*3 + j
+  const inputRefs = useRef<(any | null)[]>([]);
+
+  // Helper to check safety for visual cues
+  const isUnsafe = (entry: GasEntry, valStr: string) => {
+      if (!valStr) return false;
+      const val = parseFloat(valStr);
+      const limit = parseFloat(entry.tlv);
+      if (isNaN(val)) return false;
+
+      // O2 Rules
+      if (entry.id === 'o2') return val < 20.9 || val > 23.5;
+      
+      // Toxic/Explosive Rules
+      if (!isNaN(limit) && limit > 0) return val > limit;
+      return false;
+  };
+
+  const getCellStyle = (entry: GasEntry, val: string) => {
+      const unsafe = isUnsafe(entry, val);
+      return {
+          backgroundColor: readOnly ? '#f0f0f0' : (unsafe ? '#FFEBEE' : 'white'), // Light Red if unsafe
+          borderColor: unsafe ? theme.colors.error : 'transparent',
+          borderWidth: unsafe ? 1 : 0,
+          fontSize: 13,
+          height: 35,
+          textAlign: 'center' as const
+      };
+  };
+
+  const handleNextFocus = (index: number) => {
+      if (inputRefs.current[index + 1]) {
+          inputRefs.current[index + 1].focus();
+      }
+  };
 
   return (
     <View style={styles.container}>
-        {/* HEADER ROW */}
-        <View style={styles.headerRow}>
-            <Text style={[styles.colName, { color: theme.colors.outline }]}>GAS TYPE</Text>
-            <Text style={[styles.colInput, { color: theme.colors.outline }]}>TOP</Text>
-            <Text style={[styles.colInput, { color: theme.colors.outline }]}>MID</Text>
-            <Text style={[styles.colInput, { color: theme.colors.outline }]}>BOT</Text>
-        </View>
+      <DataTable>
+        <DataTable.Header>
+          <DataTable.Title style={{flex: 2}}>Gas</DataTable.Title>
+          <DataTable.Title style={{flex: 1.5}} numeric>TLV</DataTable.Title>
+          <DataTable.Title style={{flex: 1.5}} numeric>Top</DataTable.Title>
+          <DataTable.Title style={{flex: 1.5}} numeric>Mid</DataTable.Title>
+          <DataTable.Title style={{flex: 1.5}} numeric>Bot</DataTable.Title>
+        </DataTable.Header>
 
-        {/* DATA ROWS */}
-        {entries.map((gas) => (
-            <View key={gas.id} style={[styles.row, { borderBottomColor: theme.colors.surfaceVariant }]}>
-                {/* Gas Name & Limit */}
-                <View style={styles.colName}>
-                    <Text style={{ fontWeight: 'bold' }}>{gas.name || "Custom"}</Text>
-                    <Text variant="labelSmall" style={{ opacity: 0.5 }}>
-                        Max: {gas.tlv} {gas.unit}
-                    </Text>
-                </View>
-
-                {/* Input Fields */}
-                <TextInput 
-                    mode="flat"
-                    value={gas.top}
-                    onChangeText={(text) => onUpdate(gas.id, 'top', text)}
-                    placeholder="-"
-                    keyboardType="numeric"
-                    style={styles.input}
-                    contentStyle={styles.inputContent}
-                    underlineColor="transparent"
-                    activeUnderlineColor={readOnly ? "transparent" : theme.colors.primary}
-                    editable={!readOnly} // <--- LOCK IF READ ONLY
-                />
-                <TextInput 
-                    mode="flat"
-                    value={gas.mid}
-                    onChangeText={(text) => onUpdate(gas.id, 'mid', text)}
-                    placeholder="-"
-                    keyboardType="numeric"
-                    style={styles.input}
-                    contentStyle={styles.inputContent}
-                    underlineColor="transparent"
-                    activeUnderlineColor={readOnly ? "transparent" : theme.colors.primary}
-                    editable={!readOnly} // <--- LOCK IF READ ONLY
-                />
-                <TextInput 
-                    mode="flat"
-                    value={gas.bot}
-                    onChangeText={(text) => onUpdate(gas.id, 'bot', text)}
-                    placeholder="-"
-                    keyboardType="numeric"
-                    style={styles.input}
-                    contentStyle={styles.inputContent}
-                    underlineColor="transparent"
-                    activeUnderlineColor={readOnly ? "transparent" : theme.colors.primary}
-                    editable={!readOnly} // <--- LOCK IF READ ONLY
-                />
+        {entries.map((entry, rowIndex) => (
+          <DataTable.Row key={entry.id}>
+            {/* GAS NAME */}
+            <View style={{flex: 2, justifyContent:'center', paddingRight: 4}}>
+                {entry.isCustom && !readOnly ? (
+                    <TextInput 
+                        mode="outlined" 
+                        dense 
+                        value={entry.name} 
+                        placeholder="Name"
+                        onChangeText={(t) => onUpdate(entry.id, 'name', t)}
+                        style={{fontSize: 12, height: 30, backgroundColor: 'white'}}
+                    />
+                ) : (
+                    <Text variant="bodySmall" style={{fontWeight:'bold'}}>{entry.name} ({entry.unit})</Text>
+                )}
             </View>
+
+            {/* TLV */}
+            <View style={{flex: 1.5, justifyContent:'center', paddingHorizontal: 2}}>
+                {entry.isCustom && !readOnly ? (
+                    <TextInput 
+                        mode="outlined" 
+                        dense 
+                        keyboardType="numeric"
+                        value={entry.tlv} 
+                        placeholder="Limit"
+                        onChangeText={(t) => onUpdate(entry.id, 'tlv', t)}
+                        style={{fontSize: 12, height: 30, textAlign:'center', backgroundColor: 'white'}}
+                    />
+                ) : (
+                    <Text variant="bodySmall" style={{textAlign:'right'}}>{entry.tlv}</Text>
+                )}
+            </View>
+
+            {/* READINGS (Top/Mid/Bot) with Auto-Focus */}
+            {['top', 'mid', 'bot'].map((pos, colIndex) => {
+                const globalIndex = (rowIndex * 3) + colIndex;
+                const fieldName = pos as 'top' | 'mid' | 'bot';
+                
+                return (
+                    <View key={pos} style={{flex: 1.5, padding: 2}}>
+                        <TextInput
+                            ref={(el: any) => inputRefs.current[globalIndex] = el}
+                            mode="outlined"
+                            dense
+                            disabled={readOnly}
+                            keyboardType="numeric"
+                            returnKeyType="next"
+                            value={(entry as any)[fieldName]}
+                            onChangeText={(t) => onUpdate(entry.id, fieldName, t)}
+                            onSubmitEditing={() => handleNextFocus(globalIndex)}
+                            textColor={isUnsafe(entry, (entry as any)[fieldName]) ? theme.colors.error : theme.colors.onSurface}
+                            style={getCellStyle(entry, (entry as any)[fieldName])}
+                            contentStyle={{ paddingVertical: 0 }}
+                        />
+                    </View>
+                );
+            })}
+          </DataTable.Row>
         ))}
+      </DataTable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { width: '100%' },
-  headerRow: { flexDirection: 'row', paddingBottom: 8, marginBottom: 4 },
-  row: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, paddingVertical: 4 },
-  
-  colName: { flex: 2, justifyContent: 'center' },
-  colInput: { flex: 1, textAlign: 'center', fontSize: 10, fontWeight: 'bold' },
-
-  input: { 
-      flex: 1, 
-      height: 40, 
-      backgroundColor: 'transparent', 
-      marginHorizontal: 2 
-  },
-  inputContent: { 
-      textAlign: 'center', 
-      paddingHorizontal: 0,
-      fontSize: 14 
-  }
+  container: { borderRadius: 8, borderWidth: 1, borderColor: '#e0e0e0', overflow: 'hidden' },
 });
