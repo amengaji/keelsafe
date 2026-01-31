@@ -33,8 +33,13 @@ export default function DashboardScreen({ navigation }: Props) {
 
   // --- SMART FILTERING ---
   const { livePermits, pendingPermits, historyPermits, counts } = useMemo(() => {
+      // 1. Live: Active, Suspended, or "Job Done but not closed"
       const live = permits.filter(p => ['Active', 'Suspended', 'JobComplete'].includes(p.status));
+      
+      // 2. Pending: Drafts waiting for approval
       const pending = permits.filter(p => ['Draft', 'Pending'].includes(p.status));
+      
+      // 3. History: Closed or Expired
       const history = permits.filter(p => ['Closed', 'Expired'].includes(p.status));
 
       return {
@@ -44,7 +49,8 @@ export default function DashboardScreen({ navigation }: Props) {
           counts: {
               active: permits.filter(p => p.status === 'Active').length,
               suspended: permits.filter(p => p.status === 'Suspended').length,
-              complete: permits.filter(p => p.status === 'JobComplete').length,
+              // FIX: "Complete" badge now counts Closed + Expired (Historical completion)
+              complete: permits.filter(p => ['Closed', 'Expired'].includes(p.status)).length,
               total: permits.length
           }
       };
@@ -55,8 +61,7 @@ export default function DashboardScreen({ navigation }: Props) {
       if (target) {
           // If Draft, go to Wizard (Edit). If Live/History, go to Active Screen.
           if (target.status === 'Draft') {
-              // TODO: Implement Edit Draft Logic (Future Phase)
-              // For now, view it.
+              // Future: Navigate to Wizard with edit params
               navigation.navigate('ActivePermit', { permitId: id });
           } else {
               navigation.navigate('ActivePermit', { permitId: id });
@@ -138,7 +143,7 @@ export default function DashboardScreen({ navigation }: Props) {
           ) : (
               <View style={styles.emptyState}>
                   <Icon source="clipboard-text-off-outline" size={48} color={theme.colors.surfaceDisabled} />
-                  <Text style={{ marginTop: 12, color: theme.colors.onSurfaceDisabled }}>No permits in this category.</Text>
+                  <Text style={{ marginTop: 12, color: theme.colors.onSurfaceDisabled }}>No permits found.</Text>
               </View>
           )}
       </View>
