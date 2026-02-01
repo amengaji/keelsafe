@@ -1,22 +1,25 @@
 // mobile/App.tsx
 
 import React from 'react';
-import AppContent from './src/AppContent';
+import { Provider as PaperProvider } from 'react-native-paper';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AppThemeProvider } from './src/context/ThemeContext';
 import { PermitProvider } from './src/context/PermitContext';
-import { AppThemeProvider } from './src/context/ThemeContext'; // <--- Import
+import { CrewProvider } from './src/context/CrewContext'; // <--- Added this
+import AppContent from './src/AppContent';
 
-/**
- * KeelSafe Mobile Entry Point
- * 1. ThemeProvider (Visuals)
- * 2. PermitProvider (Data)
- * 3. AppContent (Navigation & UI)
- */
 export default function App() {
   return (
-    <AppThemeProvider>
-        <PermitProvider> 
-            <AppContent />
-        </PermitProvider>
-    </AppThemeProvider>
+    <SafeAreaProvider>
+      <AppThemeProvider>
+        <CrewProvider>
+          <PermitProvider>
+            <PaperProvider>
+              <AppContent />
+            </PaperProvider>
+          </PermitProvider>
+        </CrewProvider>
+      </AppThemeProvider>
+    </SafeAreaProvider>
   );
 }

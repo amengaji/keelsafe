@@ -118,7 +118,7 @@ export default function DashboardScreen({ navigation }: Props) {
     <View style={vertical ? styles.actionGridVertical : styles.actionGrid}>
         <ActionButton icon="plus" label="New Permit" color={theme.colors.primary} onPress={() => navigation.navigate('PermitWizard')} />
         <ActionButton icon="qrcode-scan" label="Scan QR" color={theme.colors.secondary} onPress={() => {}} />
-        <ActionButton icon="account-group" label="Crew List" color={theme.colors.tertiary} onPress={() => {}} />
+        <ActionButton icon="account-group" label="Crew List" color={theme.colors.tertiary} onPress={() => navigation.navigate('CrewManagement' as any)} />
         <ActionButton icon="file-document-outline" label="Reports" color={theme.colors.surfaceVariant} textColor={theme.colors.onSurfaceVariant} onPress={() => {}} />
     </View>
   );
