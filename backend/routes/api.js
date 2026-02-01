@@ -8,6 +8,9 @@ const templateController = require('../controllers/templateController');
 const authController = require('../controllers/authController');
 const permitController = require('../controllers/permitController');
 const checklistController = require('../controllers/checklistController');
+const ChecklistStep = require('../models/ChecklistStep');
+const SimOpsRule = require('../models/SimOpsRule');
+const simopsController = require('../controllers/simopsController');
 
 // --- Auth Routes ---
 router.post('/auth/login', authController.login);
@@ -33,6 +36,9 @@ router.post('/permits/authorize', permitController.authorizePermit);
 router.post('/auth/register', authController.register);
 
 router.post('/checklists/deploy', checklistController.deployChecklists);
+
+router.post('/simops/rules/sync', simopsController.syncRules);
+
 
 // Add a GET route to see all vessels (for your React Dashboard)
 const Vessel = require('../models/Vessel');
@@ -61,6 +67,48 @@ router.get('/vessels', async (req, res) => {
   }
 });
 
+// Add this route to your existing routes
+router.get('/checklists/vessel-active', async (req, res) => {
+  try {
+    // Fetch all steps ordered by permit name and sequence
+    const templates = await ChecklistStep.findAll({
+      order: [
+        ['permitName', 'ASC'],
+        ['sequence', 'ASC']
+      ]
+    });
+
+    // Send the array (even if empty)
+    res.json(templates || []);
+  } catch (error) {
+    console.error("❌ Checklist Fetch Error:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Internal Server Error while fetching checklists",
+      details: error.message 
+    });
+  }
+});
+
+// Get all safety rules
+router.get('/simops/rules', async (req, res) => {
+  try {
+    const rules = await SimOpsRule.findAll();
+    res.json(rules);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Save a new conflict rule
+router.post('/simops/rules', async (req, res) => {
+  try {
+    const rule = await SimOpsRule.create(req.body);
+    res.json(rule);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 /**
  * @section SimOps Engine Routes

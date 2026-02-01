@@ -1,9 +1,9 @@
 // web/src/pages/ChecklistManager.tsx
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { 
   Upload, Save, Download, Plus, Settings, 
-  ChevronRight, ChevronDown, ListPlus, Trash2, Edit2, X, Check,
+  ChevronRight, ChevronDown, Trash2, Edit2, X, Check,
   Search, Filter, MoveVertical, AlertCircle, Copy, FileSpreadsheet
 } from 'lucide-react';
 import { useWebTheme } from '../context/ThemeContext';

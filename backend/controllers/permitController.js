@@ -1,67 +1,98 @@
 // backend/controllers/permitController.js
 const Permit = require('../models/Permit');
-const User = require('../models/User');
+const SimOpsRule = require('../models/SimOpsRule');
+const { Op } = require('sequelize');
 
-// 1. Initialize a new permit from a Template
-exports.createPermit = async (req, res) => {
-  const { vesselId, templateId, permitNumber } = req.body;
+/**
+ * checkSimOpsConflict
+ * Middleware to check for SimOps violations before creating or activating a permit.
+ * Checks Vessel + Zone + WorkType against active permits and Shore-defined rules.
+ */
+exports.checkSimOpsConflict = async (req, res, next) => {
+  const { vesselId, workType, zone } = req.body;
+
   try {
-    const permit = await Permit.create({
-      vesselId,
-      templateId,
-      permitNumber,
-      status: 'DRAFT'
+    // 1. Fetch all currently ACTIVE permits on this specific vessel in the same zone
+    const activePermits = await Permit.findAll({
+      where: {
+        vesselId: vesselId,
+        status: 'ACTIVE',
+        zone: zone 
+      }
     });
-    res.json({ success: true, permit });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to initiate permit" });
-  }
-};
 
-// 2. Crew Sign-on (For Fitters, Oilers, OS, etc. on Tablets)
-exports.crewSignOn = async (req, res) => {
-  const { permitId, userId } = req.body;
-  try {
-    const permit = await Permit.findByPk(permitId);
-    const user = await User.findByPk(userId);
-
-    if (!permit || !user) return res.status(404).json({ error: "Data not found" });
-
-    // Append user to the JSONB signedCrew array
-    const updatedCrew = [...permit.signedCrew, { 
-      userId: user.id, 
-      name: user.name, 
-      rank: user.rank, 
-      time: new Date() 
-    }];
-
-    await permit.update({ signedCrew: updatedCrew });
-    res.json({ success: true, message: `${user.name} signed onto permit` });
-  } catch (error) {
-    res.status(500).json({ error: "Sign-on failed" });
-  }
-};
-
-// 3. Final Authorization (For Master / Chief Eng / First Eng)
-exports.authorizePermit = async (req, res) => {
-  const { permitId, authorizerId } = req.body;
-  try {
-    const user = await User.findByPk(authorizerId);
-    
-    // Safety Gate: Check Rank
-    const authorizedRanks = ['MASTER', 'CHIEF_OFFICER', 'CHIEF_ENGINEER', 'FIRST_ENGINEER'];
-    if (!authorizedRanks.includes(user.rank)) {
-      return res.status(403).json({ error: "Rank not authorized to sign permits" });
+    // If no other permits are active in that zone, there is no conflict
+    if (activePermits.length === 0) {
+      return next();
     }
 
-    await Permit.update({ 
-      status: 'ACTIVE', 
-      authorizerId, 
-      workStart: new Date() 
-    }, { where: { id: permitId } });
+    // 2. Fetch all CRITICAL/FORBIDDEN SimOps rules from the database
+    const rules = await SimOpsRule.findAll({ 
+      where: { 
+        severity: 'CRITICAL' 
+      } 
+    });
 
-    res.json({ success: true, message: "Permit Authorized. Work may commence." });
+    // 3. Cross-reference the requested workType against active permits
+    for (const activePermit of activePermits) {
+      const conflict = rules.find(r => 
+        (r.permitA === workType && r.permitB === activePermit.workType) ||
+        (r.permitA === activePermit.workType && r.permitB === workType)
+      );
+
+      if (conflict) {
+        return res.status(409).json({
+          success: false,
+          conflict: true,
+          message: `SIMOPS VIOLATION: ${workType.toUpperCase()} is forbidden in ${zone} while ${activePermit.workType.toUpperCase()} is ongoing.`,
+          activePermitId: activePermit.id,
+          vesselId: vesselId
+        });
+      }
+    }
+
+    // No conflicts found, move to the next function in the route
+    next();
   } catch (error) {
-    res.status(500).json({ error: "Authorization failed" });
+    console.error("SimOps Validation Error:", error);
+    res.status(500).json({ error: "Internal Safety Engine Error" });
+  }
+};
+
+/**
+ * createPermit
+ * Handles the final creation of the permit after safety checks pass.
+ */
+exports.createPermit = async (req, res) => {
+  try {
+    const permit = await Permit.create({
+      ...req.body,
+      status: 'PENDING', // Default to pending until signed
+      version: Date.now()
+    });
+
+    res.status(201).json({
+      success: true,
+      data: permit
+    });
+  } catch (error) {
+    console.error("Permit Creation Error:", error);
+    res.status(500).json({ error: "Failed to create permit" });
+  }
+};
+
+/**
+ * getVesselPermits
+ * Fetches all permits for a specific vessel.
+ */
+exports.getVesselPermits = async (req, res) => {
+  try {
+    const permits = await Permit.findAll({
+      where: { vesselId: req.params.vesselId },
+      order: [['createdAt', 'DESC']]
+    });
+    res.json(permits);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch permits" });
   }
 };
