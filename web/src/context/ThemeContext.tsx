@@ -13,7 +13,6 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
-  // Check local storage or system preference
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem('keelsafe_web_theme');
     if (saved === 'light' || saved === 'dark') return saved;
@@ -22,7 +21,13 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     localStorage.setItem('keelsafe_web_theme', theme);
-    // Apply theme to the body for global background colors
+    
+    // ShadCN / Tailwind requirement: Add/Remove 'dark' class on the root element
+    const root = window.document.documentElement;
+    root.classList.remove('light', 'dark');
+    root.classList.add(theme);
+
+    // Maintain global body background
     document.body.style.backgroundColor = theme === 'dark' ? '#0F172A' : '#F8FAFC';
   }, [theme]);
 

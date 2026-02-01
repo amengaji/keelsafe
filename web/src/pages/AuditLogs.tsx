@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { 
-  FileText, Search, Filter, ArrowUpRight, 
+  FileText, Search, Filter, 
   User, Shield, Clock, HardDrive
 } from 'lucide-react';
 import { useWebTheme } from '../context/ThemeContext';

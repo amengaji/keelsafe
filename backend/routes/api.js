@@ -7,6 +7,7 @@ const vesselController = require('../controllers/vesselController');
 const templateController = require('../controllers/templateController');
 const authController = require('../controllers/authController');
 const permitController = require('../controllers/permitController');
+const checklistController = require('../controllers/checklistController');
 
 // --- Auth Routes ---
 router.post('/auth/login', authController.login);
@@ -31,12 +32,36 @@ router.post('/permits/authorize', permitController.authorizePermit);
 
 router.post('/auth/register', authController.register);
 
+router.post('/checklists/deploy', checklistController.deployChecklists);
+
 // Add a GET route to see all vessels (for your React Dashboard)
 const Vessel = require('../models/Vessel');
+// Updated GET route to provide full vessel details for the Web Dashboard
+// backend/routes/api.js
+
 router.get('/vessels', async (req, res) => {
-  const fleet = await Vessel.findAll({ order: [['lastSync', 'DESC']] });
-  res.json(fleet);
+  try {
+    const fleet = await Vessel.findAll({ order: [['lastSync', 'DESC']] });
+    
+    // Clean the data to ensure the Frontend gets exactly what it needs
+    const cleanFleet = fleet.map(v => ({
+      id: v.id,
+      name: v.name,
+      imoNumber: v.imoNumber, // Ensure this matches your model
+      status: v.status,
+      lat: v.lat,
+      lng: v.lng,
+      activePermitCount: v.activePermitCount,
+      lastSync: v.lastSync // This is the crucial field
+    }));
+
+    res.json(cleanFleet);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
+
+
 /**
  * @section SimOps Engine Routes
  * Evaluates safety conflicts between multiple permits

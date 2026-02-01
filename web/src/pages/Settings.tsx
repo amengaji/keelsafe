@@ -1,6 +1,6 @@
 // web/src/pages/Settings.tsx
 
-import { Lock, Radio, Phone, Zap, ShieldCheck, Database } from 'lucide-react';
+import { Lock, Radio, Phone } from 'lucide-react';
 
 interface SettingsProps {
   colors: any;
